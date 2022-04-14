@@ -1,12 +1,12 @@
-import argparse
 import logging
-
 from pathlib import Path
 from myLog import Log
 from datetime import datetime
 import time
 from datetime import timedelta
 from preprocess import ProcessCARD, ProcessSTRING
+from viz import Viz
+from gnn import GNN
 
 
 class AARG():
@@ -37,7 +37,19 @@ class AARG():
             card_seq, card_ls, card_map = ProcessCARD(
                 Path("CARD"), self.arg_threshold, self.out_dir).process()
             graph = ProcessSTRING(Path("STRING"), card_seq, card_ls, card_map,
-                          self.string_threshold, self.out_dir).process()
+                                  self.string_threshold, self.out_dir).process()
+            Viz(graph, self.out_dir).generate()
+
+            parameters = {"channels": 16,           # Number of channels in the first layer
+                          "dropout": 0.5,           # Dropout rate for the features
+                          "l2_reg": 5e-4,           # L2 regularization rate
+                          "learning_rate": 1e-2,    # Learning rate
+                          "epochs": 200,            # Number of training epochs
+                          "es_patience": 10}        # Patience for early stopping}
+
+            model = GNN(graph, parameters)
+            model.train()
+            model.test()
 
         except Exception as e:
             logging.info(e)

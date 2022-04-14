@@ -124,20 +124,17 @@ class ProcessSTRING():
         self.path_alignment = Path("S_AUREUS/1280.protein.sequences.v11.5.tsv")
         self.path_nodes_list = out_dir.joinpath("nodes_list.csv")
         self.path_graph = out_dir.joinpath("graph.p")
-        # self.path_node_features = out_dir.joinpath("node_features.csv")
-        # self.path_edge_features = out_dir.joinpath("edge_features.csv")
-        # self.path_adjacency = out_dir.joinpath("adjacency.csv")
-        # self.path_label = out_dir.joinpath("label.csv")
         self.threshold = threshold
 
     def process(self):
-        # # run alignment
-        # run_subprocess(
-        #     f"makeblastdb -in {self.path_card} -parse_seqids -blastdb_version 5 -dbtype prot -out {self.path_db}")
-        # run_subprocess(
-        #     f'blastp -query {self.path_string_seq} -db {self.path_db} -num_threads 32 -mt_mode 1 -out {self.path_alignment} -outfmt "6 qseqid sseqid pident evalue bitscore"')
+        return self.path_graph
 
-        card_seq = read_fasta_to_df(self.path_card_seq)
+        # run alignment
+        run_subprocess(
+            f"makeblastdb -in {self.path_card} -parse_seqids -blastdb_version 5 -dbtype prot -out {self.path_db}")
+        run_subprocess(
+            f'blastp -query {self.path_string_seq} -db {self.path_db} -num_threads 32 -mt_mode 1 -out {self.path_alignment} -outfmt "6 qseqid sseqid pident evalue bitscore"')
+
         # Opening JSON file
         card_map = pd.read_csv(self.path_card_map, sep='\t')
         card_map = card_map.set_index('ARO Accession')
