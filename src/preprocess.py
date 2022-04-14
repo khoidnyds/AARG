@@ -28,7 +28,7 @@ class ProcessCARD():
         self.threshold = threshold
 
     def process(self):
-        return self.path_card_seq_clean, self.path_arg_list, self.path_arg_map
+        # return self.path_card_seq_clean, self.path_arg_list, self.path_arg_map
 
         try:
             card_label = pd.read_csv(self.path_card_label, sep='\t')
@@ -76,16 +76,7 @@ class ProcessCARD():
 
         # extract mapping
         try:
-            def encode_arg(x):
-                encoded = [int(i in x) for i in drug_labels]
-                if set(encoded) != {0}:
-                    return encoded
-                else:
-                    return np.NaN
-            card_label['Drug'] = card_label['Drug Class'].apply(
-                encode_arg)
-            card_label = card_label.dropna()
-            card_label[['ARO Accession', 'Drug Class', 'Drug']].to_csv(
+            card_label[['ARO Accession', 'Drug Class']].to_csv(
                 self.path_arg_map, index=False, sep="\t")
         except Exception as e:
             logging.error("Can't generate card_map.json in preprocess.py")
@@ -131,7 +122,7 @@ class ProcessSTRING():
 
         # run alignment
         run_subprocess(
-            f"makeblastdb -in {self.path_card} -parse_seqids -blastdb_version 5 -dbtype prot -out {self.path_db}")
+            f"makeblastdb -in {self.path_card_seq} -parse_seqids -blastdb_version 5 -dbtype prot -out {self.path_db}")
         run_subprocess(
             f'blastp -query {self.path_string_seq} -db {self.path_db} -num_threads 32 -mt_mode 1 -out {self.path_alignment} -outfmt "6 qseqid sseqid pident evalue bitscore"')
 
@@ -170,6 +161,7 @@ class ProcessSTRING():
 
         # add node attributes
         node_features = {}
+        node_label = {}
         string_seq = Fasta(str(self.path_string_seq))
         drug_labels = card_ls.keys()
         for n in G.nodes:
@@ -188,7 +180,15 @@ class ProcessSTRING():
                 list(ProteinAnalysis(str(string_seq[n])).get_amino_acids_percent().values()))
             node_features[n] = np.concatenate(
                 (alignment_features, aa_composition))
+
+            n_labels = highly_confident_ARG[highly_confident_ARG['qseqid']
+                                            == n]['Drug Class'].values
+            concat_n_labels = ';'.join(n_labels)
+            node_label[n] = [int(i in concat_n_labels) for i in drug_labels]
+            ####################### node_label[n] = card_map.loc[n]['Drug']
+
         nx.set_node_attributes(G, node_features, name="features")
+        nx.set_node_attributes(G, node_label, name="label")
 
         # add edge attributes
         # if edge has any of "neighborhood", "fusion", "cooccurence", edge attribute is 1 else 0
@@ -196,9 +196,9 @@ class ProcessSTRING():
         edge_features = {}
         for e in G.edges:
             if string_adj.loc[e[0], e[1]]['neighborhood'] or string_adj.loc[e[0], e[1]]['fusion'] or string_adj.loc[e[0], e[1]]['cooccurence']:
-                edge_features[e] = 1
+                edge_features[e] = [1]
             else:
-                edge_features[e] = 0
+                edge_features[e] = [0]
         nx.set_edge_attributes(G, edge_features, name="features")
 
         # store graph
@@ -207,6 +207,6 @@ class ProcessSTRING():
             f"Graph: {info[2]}, {info[3]}, {info[4]}")
         nx.write_gpickle(G, self.path_graph)
         highly_confident_ARG = highly_confident_ARG.drop(
-            ['Drug Class', 'Drug'], axis=1)
+            ['Drug Class'], axis=1)
         highly_confident_ARG.to_csv(self.path_nodes_list, index=False)
         return self.path_graph

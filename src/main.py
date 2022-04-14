@@ -47,7 +47,7 @@ class AARG():
                           "epochs": 200,            # Number of training epochs
                           "es_patience": 10}        # Patience for early stopping}
 
-            model = GNN(graph, parameters)
+            model = GNN(graph, parameters, self.out_dir)
             model.train()
             model.test()
 
