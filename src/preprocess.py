@@ -1,15 +1,16 @@
-import pandas as pd
+import modin.pandas as pd
+from modin.config import Engine
+
 from pyfaidx import Fasta
 from collections import Counter
 import json
-from utils import run_subprocess, read_fasta_to_df
+from utils import run_subprocess
 import numpy as np
 import logging
 from pathlib import Path
 import networkx as nx
 from Bio.SeqUtils.ProtParam import ProteinAnalysis
-
-
+from tqdm import tqdm
 class ProcessCARD():
     """
     Generate 3 files:
@@ -19,6 +20,7 @@ class ProcessCARD():
     """
 
     def __init__(self, input, threshold, out_dir) -> None:
+        Engine.put("ray")
         self.path_card_seq = input.joinpath(
             "protein_fasta_protein_homolog_model.fasta")
         self.path_card_label = input.joinpath("aro_index.tsv")
@@ -28,7 +30,7 @@ class ProcessCARD():
         self.threshold = threshold
 
     def process(self):
-        # return self.path_card_seq_clean, self.path_arg_list, self.path_arg_map
+        return self.path_card_seq_clean, self.path_arg_list, self.path_arg_map
 
         try:
             card_label = pd.read_csv(self.path_card_label, sep='\t')
@@ -106,60 +108,76 @@ class ProcessSTRING():
         self.path_db = out_dir.joinpath("blastdb").joinpath("card")
         self.path_string_seq = path_string.joinpath(
             "protein.sequences.v11.5.fa")
-        self.path_string_seq = Path("S_AUREUS/1280.protein.sequences.v11.5.fa")
         self.path_string_adj = path_string.joinpath(
             "protein.links.full.v11.5.txt")
-        self.path_string_adj = Path(
-            "S_AUREUS/1280.protein.links.full.v11.5.txt")
         self.path_alignment = out_dir.joinpath("alignment.tsv")
-        self.path_alignment = Path("S_AUREUS/1280.protein.sequences.v11.5.tsv")
         self.path_nodes_list = out_dir.joinpath("nodes_list.csv")
         self.path_graph = out_dir.joinpath("graph.p")
         self.threshold = threshold
 
     def process(self):
-        return self.path_graph
+        # return self.path_graph
 
-        # run alignment
-        run_subprocess(
-            f"makeblastdb -in {self.path_card_seq} -parse_seqids -blastdb_version 5 -dbtype prot -out {self.path_db}")
-        run_subprocess(
-            f'blastp -query {self.path_string_seq} -db {self.path_db} -num_threads 32 -mt_mode 1 -out {self.path_alignment} -outfmt "6 qseqid sseqid pident evalue bitscore"')
+        # # run alignment
+        # run_subprocess(
+        #     f"makeblastdb -in {self.path_card_seq} -parse_seqids -blastdb_version 5 -dbtype prot -out {self.path_db}")
+        # run_subprocess(
+        #     f'blastp -query {self.path_string_seq} -db {self.path_db} -num_threads 32 -mt_mode 1 -out {self.path_alignment} -outfmt "6 qseqid sseqid pident evalue bitscore"')
 
         # Opening JSON file
+        chunksize = 500000
         card_map = pd.read_csv(self.path_card_map, sep='\t')
         card_map = card_map.set_index('ARO Accession')
         with open(self.path_card_list) as file:
             card_ls = json.load(file)
+
+        aligned_ls = []
         aligned = pd.read_csv(self.path_alignment, sep='\t', names=[
-                              'qseqid', 'sseqid', 'pident', 'evalue', 'bitscore'])
-        aligned = aligned.merge(card_map, how='left',
-                                left_on='sseqid', right_on='ARO Accession')
-        aligned = aligned.dropna()
+                              'qseqid', 'sseqid', 'pident', 'evalue', 'bitscore'], chunksize=chunksize)
+        logging.info("Loading alignment file")
+
+        # MULTI-THREADING
+        for a in tqdm(aligned, total=183283086//chunksize):
+            tmp_aligned = a.merge(card_map, how='left',
+                                  left_on='sseqid', right_on='ARO Accession')
+            tmp_aligned = tmp_aligned.dropna()
+            aligned_ls += [tmp_aligned.copy()]
+        aligned = pd.concat(aligned_ls)
 
         highly_confident_ARG = aligned[aligned['pident'] > self.threshold]
         highly_confident_ARG = highly_confident_ARG.sort_values(
             'pident', ascending=False).drop_duplicates(['qseqid'])
 
         # create networkx
+        logging.info("Creating network")
         G = nx.Graph()
         nodes_list = highly_confident_ARG['qseqid'].values
         G.add_nodes_from(nodes_list)
-        string_adj = pd.read_csv(self.path_string_adj, sep=" ")
-        string_adj = string_adj[string_adj['protein1'].isin(
-            nodes_list) & string_adj['protein2'].isin(nodes_list)]
+        string_adj_lst = []
+        string_adj = pd.read_csv(self.path_string_adj,
+                                 sep=" ", chunksize=chunksize)
+        logging.info("Loading full.link file")
+
+        # MULTI-THREADING
+        for s in tqdm(string_adj, total=20052394042//chunksize):
+            tmp_string_adj = s[s['protein1'].isin(
+                nodes_list) & s['protein2'].isin(nodes_list)]
+            string_adj_lst += [tmp_string_adj.copy()]
+        string_adj = pd.concat(string_adj_lst)
+
         G.add_weighted_edges_from([(e['protein1'], e['protein2'], float(
             e['combined_score'])) for _, e in string_adj.iterrows()])
 
         # remove isolated nodes from graph
         isolated_nodes = list(nx.isolates(G))
         logging.info(
-            f"Remove isolated node from network: {len(isolated_nodes)}/{len(highly_confident_ARG)} = {len(isolated_nodes)/len(highly_confident_ARG)*100:.3f}%")
+            f"Removing isolated node from network: {len(isolated_nodes)}/{len(highly_confident_ARG)} = {len(isolated_nodes)/len(highly_confident_ARG)*100:.3f}%")
         G.remove_nodes_from(isolated_nodes)
         highly_confident_ARG = highly_confident_ARG[~highly_confident_ARG['qseqid'].isin(
             isolated_nodes)]
 
         # add node attributes
+        logging.info("Adding node features")
         node_features = {}
         node_label = {}
         string_seq = Fasta(str(self.path_string_seq))
@@ -185,13 +203,13 @@ class ProcessSTRING():
                                             == n]['Drug Class'].values
             concat_n_labels = ';'.join(n_labels)
             node_label[n] = [int(i in concat_n_labels) for i in drug_labels]
-            ####################### node_label[n] = card_map.loc[n]['Drug']
 
         nx.set_node_attributes(G, node_features, name="features")
         nx.set_node_attributes(G, node_label, name="label")
 
         # add edge attributes
         # if edge has any of "neighborhood", "fusion", "cooccurence", edge attribute is 1 else 0
+        logging.info("Adding edge features")
         string_adj = string_adj.set_index(['protein1', 'protein2'])
         edge_features = {}
         for e in G.edges:

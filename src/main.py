@@ -40,16 +40,15 @@ class AARG():
                                   self.string_threshold, self.out_dir).process()
             Viz(graph, self.out_dir).generate()
 
-            parameters = {"channels": 16,           # Number of channels in the first layer
+            parameters = {"channels_1": 64,         # Number of channels in the first layer
+                          "channels_2": 32,         # Number of channels in the second layer
                           "dropout": 0.5,           # Dropout rate for the features
                           "l2_reg": 5e-4,           # L2 regularization rate
                           "learning_rate": 1e-2,    # Learning rate
                           "epochs": 200,            # Number of training epochs
                           "es_patience": 10}        # Patience for early stopping}
 
-            model = GNN(graph, parameters, self.out_dir)
-            model.train()
-            model.test()
+            # model = GNN(graph, parameters, self.out_dir).train()
 
         except Exception as e:
             logging.info(e)
