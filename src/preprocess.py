@@ -11,6 +11,8 @@ from pathlib import Path
 import networkx as nx
 from Bio.SeqUtils.ProtParam import ProteinAnalysis
 from tqdm import tqdm
+
+
 class ProcessCARD():
     """
     Generate 3 files:
@@ -117,12 +119,6 @@ class ProcessSTRING():
 
     def process(self):
         # return self.path_graph
-
-        # # run alignment
-        # run_subprocess(
-        #     f"makeblastdb -in {self.path_card_seq} -parse_seqids -blastdb_version 5 -dbtype prot -out {self.path_db}")
-        # run_subprocess(
-        #     f'blastp -query {self.path_string_seq} -db {self.path_db} -num_threads 32 -mt_mode 1 -out {self.path_alignment} -outfmt "6 qseqid sseqid pident evalue bitscore"')
 
         # Opening JSON file
         chunksize = 500000

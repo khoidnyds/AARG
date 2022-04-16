@@ -19,12 +19,13 @@ class AARG():
         self.string_threshold = 75
 
         date = datetime.today().strftime("%m-%d--%H-%M-%S")
+        Log(path=Path("log"), date=date)
+
         date = "04-13--19-08-08"
         self.out_dir = Path("results")\
             .joinpath(date)
         Path.mkdir(self.out_dir, parents=True, exist_ok=True)
         # logging set up
-        Log(path=Path("log"), date=date)
         start = time.time()
         self.pipeline()
 
